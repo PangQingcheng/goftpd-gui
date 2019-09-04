@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>FTP-SERVER</title>
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" rel="stylesheet">
+    <script>window.$ = window.jQuery = require('jquery');</script>
+</head>
+
+<body>
+    <div class="container">
+        <div class="row clearfix">
+            <div class="col-md-12 column">
+                <form role="form">
+                    <div class="form-group">
+                        <label for="adminUsername">管理员用户名</label><input type="text" class="form-control"
+                            id="adminUsername" />
+                    </div>
+                    <div class="form-group">
+                        <label for="adminPassword">管理员密码</label><input type="text" class="form-control"
+                            id="adminPassword" />
+                    </div>
+                    <div class="form-group">
+                        <label for="rootDirPath">根目录选择</label>
+                        <input type="file" id="rootDirPath" webkitdirectory multiple />
+                        <p id="rootDirPathText" class="help-block">
+
+                        </p>
+                    </div>
+                    <div class="checkbox">
+                        <label><input id="openConsole" type="checkbox" />启动FTP服务后打开GO-FTP控制台页面</label>
+                    </div>
+                    <button id="submit" type="submit" class="btn btn-default">启动FTP服务</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</body>
+<script>
+    $(() => {
+        try{
+            var fs = require('fs');
+            var process = require('child_process');
+            var INI = require("./js/ini");//INI模块
+            var ini___ = INI.loadFileSync("./custom.ini")//从config.ini读取配置
+            var fileSe = ini___.getOrCreateSection("file");
+            var adminSe = ini___.getOrCreateSection("admin");
+
+            $("#adminUsername").val(adminSe["user"]);
+            $("#adminPassword").val(adminSe["pass"]);
+            $("#rootDirPathText").html(fileSe["rootpath"]);
+
+            $("form").submit(() => {
+                var adminUsername = $("#adminUsername").val();
+                var adminPassword = $("#adminPassword").val();
+                var rootDirPath = $("#rootDirPathText").html();
+                var openConsole = $("#openConsole").is(":checked");
+
+                // TODO 非空校验
+
+                adminSe["user"] = adminUsername;
+                adminSe["pass"] = adminPassword;
+                fileSe["rootpath"] = rootDirPath;
+
+                var customIni = INI.encodeToIni();
+
+                fs.writeFile('./custom.ini', customIni,function(error){
+                    if(error){
+                        alert('写入失败');
+                        return
+                    }
+                    // 启动ftpd
+                    process.exec('./ftpd.exe --config custom.ini',function (error, stdout, stderr) {
+                        if (error !== null) {
+                            console.log('exec error: ' + error);
+                            return;
+                        }
+
+                        if(openConsole){
+                            process.exec('open http://127.0.0.1:8181' + url);
+                        }
+                    });
+                })
+            });
+        }catch(e){
+            console.log(e);
+        }
+        
+    });
+</script>
+
+</html>

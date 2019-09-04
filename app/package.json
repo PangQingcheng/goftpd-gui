@@ -1,0 +1,16 @@
+{
+  "name": "ftp-server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-packager . go-ftpd --win --out=./out --arch=x64 --app-version=0.0.1"
+  },
+  "devDependencies": {
+    "electron": "^6.0.7"
+  },
+  "dependencies": {
+    "jquery": "^3.4.1"
+  }
+}
