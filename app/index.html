@@ -4,57 +4,112 @@
 <head>
     <meta charset="UTF-8">
     <title>FTP-SERVER</title>
-    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" rel="stylesheet">
+    <link href="css/bootstrap.min.css" rel="stylesheet">
     <script>window.$ = window.jQuery = require('jquery');</script>
 </head>
 
-<body>
-    <div class="container">
+<body style="background-color: honeydew;">
+    <div style=" font-size: 26px; text-align: center;line-height: 80px; font-weight: 800;">
+        GOFTP--ftp服务器
+    </div>
+    <div class="container" >
         <div class="row clearfix">
             <div class="col-md-12 column">
-                <form role="form">
-                    <div class="form-group">
-                        <label for="adminUsername">管理员用户名</label><input type="text" class="form-control"
-                            id="adminUsername" />
-                    </div>
-                    <div class="form-group">
-                        <label for="adminPassword">管理员密码</label><input type="text" class="form-control"
-                            id="adminPassword" />
-                    </div>
-                    <div class="form-group">
-                        <label for="rootDirPath">根目录选择</label>
-                        <input type="file" id="rootDirPath" webkitdirectory multiple />
-                        <p id="rootDirPathText" class="help-block">
+                <div class="form-group">
+                    <label for="adminUsername">管理员用户名</label><input type="text" class="form-control"
+                        id="adminUsername" />
+                </div>
+                <div class="form-group">
+                    <label for="adminPassword">管理员密码</label><input type="text" class="form-control"
+                        id="adminPassword" />
+                </div>
+                <div class="form-group">
+                    <label for="rootDirPath">根目录选择</label>
+                    <input type="file" id="rootDirPath" webkitdirectory multiple />
+                    <p id="rootDirPathText" class="help-block">
 
-                        </p>
-                    </div>
-                    <div class="checkbox">
-                        <label><input id="openConsole" type="checkbox" />启动FTP服务后打开GO-FTP控制台页面</label>
-                    </div>
-                    <button id="submit" type="submit" class="btn btn-default">启动FTP服务</button>
-                </form>
+                    </p>
+                </div>
+                <div class="checkbox">
+                    <label><input id="openConsole" type="checkbox" />启动FTP服务后打开GO-FTP控制台页面</label>
+                </div>
+                <button id="submit" class="btn btn-default">启动FTP服务</button>
+                <button id="closeFtpd" class="btn btn-default" style="display:none">关闭FTP服务</button>
             </div>
         </div>
+        <br/>
+        <p>服务器日志信息：</p>
+        <textarea id="console" style="width: 100%;height: 360px; background-color: black; color: greenyellow;" readonly='readonly'></textarea>
     </div>
 </body>
 <script>
     $(() => {
-        try{
+        try {
+            var ftpd = null;
+            var open = require("open")
+            var ipc = require('electron').ipcRenderer;
+            var kill = require('tree-kill');
+            var path = require('path');
             var fs = require('fs');
-            var process = require('child_process');
-            var INI = require("./js/ini");//INI模块
-            var ini___ = INI.loadFileSync("./custom.ini")//从config.ini读取配置
-            var fileSe = ini___.getOrCreateSection("file");
-            var adminSe = ini___.getOrCreateSection("admin");
+            var ini = require('ini')
+            var child_process = require('child_process');
+            var ini___ = ini.parse(fs.readFileSync('./custom.ini', 'utf-8'));
+            if(ini___ == null || ini___ == undefined || ini___.length == 0){
+                ini___ = ini.parse(fs.readFileSync('./config.ini', 'utf-8'));
+            }
+            if(ini___ == null || ini___ == undefined || ini___.length == 0){
+                alert("Error:未发现配置文件！");
+                ipc.send("closeAPP", true);
+                return;
+            }
+            var fileSe = ini___.file;
+            var adminSe = ini___.admin;
 
             $("#adminUsername").val(adminSe["user"]);
             $("#adminPassword").val(adminSe["pass"]);
-            $("#rootDirPathText").html(fileSe["rootpath"]);
+            $("#rootDirPathText").html(path.resolve(fileSe["rootpath"]));
 
-            $("form").submit(() => {
+            $("#rootDirPath").change((event) => {
+                var dir = event.originalEvent.path[0].files[0].path;
+                $("#rootDirPathText").html(path.resolve(dir));
+            });
+
+            var stopFtpd = () => {
+                if (ftpd != null) {
+                    var pid = ftpd.pid;
+                    kill(pid, 'SIGTERM', function(err) {
+                        if(err == null){
+                            ftpd = null;
+                            alert("ftpd服务已关闭");
+                        }else{
+                            alert("错误：" + error.message);
+                        }
+                    });
+                } else {
+                    alert("ftpd服务尚未启动");
+                }
+            }
+
+            $("#closeFtpd").click(stopFtpd);
+
+            ipc.on('shoutDownFtpd', (event, message) => {
+                if (ftpd != null) {
+                    if(confirm("ftp服务尚未关闭，确认关闭ftp服务？")){
+                        var pid = ftpd.pid;
+                        kill(pid, 'SIGTERM', function(err) {
+                            ipc.send("closeAPP", true);
+                        });
+                    }
+                }else{
+                    ipc.send("closeAPP", true);
+                }
+            })
+
+
+            $("#submit").click(() => {
                 var adminUsername = $("#adminUsername").val();
                 var adminPassword = $("#adminPassword").val();
-                var rootDirPath = $("#rootDirPathText").html();
+                var rootDirPath = path.resolve($("#rootDirPathText").html());
                 var openConsole = $("#openConsole").is(":checked");
 
                 // TODO 非空校验
@@ -63,30 +118,53 @@
                 adminSe["pass"] = adminPassword;
                 fileSe["rootpath"] = rootDirPath;
 
-                var customIni = INI.encodeToIni();
+                var customIni = ini.stringify(ini___);
 
-                fs.writeFile('./custom.ini', customIni,function(error){
-                    if(error){
+                fs.writeFile('./custom.ini', customIni, function (error) {
+                    if (error) {
                         alert('写入失败');
                         return
                     }
+                    $("#console").html("");
                     // 启动ftpd
-                    process.exec('./ftpd.exe --config custom.ini',function (error, stdout, stderr) {
-                        if (error !== null) {
-                            console.log('exec error: ' + error);
+                    var options = {
+                        encoding: 'utf8',
+                    };
+                    ftpd = child_process.exec(__dirname + '/ftpd.exe --config custom.ini', options, function (error, stdout, stderr) {
+                        $("#submit").show();
+                        $("#closeFtpd").hide();
+
+                        if (error != null && ftpd != null) {
+                            $("#console").append(error.stack);
                             return;
                         }
+                        ftpd = null;
+                    });
+                    
+                    if(!ftpd.killed){
+                        $("#submit").hide();
+                        $("#closeFtpd").show();
+
+                        ftpd.stdout.on('data', (data) => {
+                         $("#console").append(data);
+                        });
+                        ftpd.stderr.on('data', (data) => {
+                            $("#console").append(data);
+                        });
 
                         if(openConsole){
-                            process.exec('open http://127.0.0.1:8181' + url);
+                            open("http://localhost:8181");
                         }
-                    });
+                    }
                 })
             });
-        }catch(e){
+        } catch (e) {
             console.log(e);
+            alert(e.message);
+            ipc.send("closeAPP", true);
+            return;
+
         }
-        
     });
 </script>
 
